@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>지뢰 찾기 / Minesweeper（5×5｜5 Mines）</title>
+<style>
+  body { 
+    font-family: Arial, sans-serif; 
+    background: #b8860b; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: flex-start;
+    min-height: 100vh;
+    margin: 0;
+    padding-top: 20px;
+  }
+  #board { display: grid; margin: 20px auto; gap: 4px; }
+  .cell {
+    width: 50px; height: 50px;
+    background: #d2b48c;
+    display: flex; justify-content: center; align-items: center;
+    cursor: pointer; font-weight: bold; font-size: 20px; user-select: none;
+    color: #1c1c1c;
+  }
+  .revealed { background: #f5deb3; cursor: default; }
+  .mine { background: #8b4513; color: white; }
+  .mineHint3 { background: #deb887 !important; }
+  .mineHint4 { background: #a0522d !important; }
+  #status { margin: 8px 0 12px; font-size: 20px; color: white; }
+  .toolbar { display:flex; gap:12px; justify-content:center; align-items:center; }
+  button { 
+    padding:8px 14px; font-size:16px; cursor:pointer; 
+    background:#cd853f; color:white; border:none; border-radius:6px;
+  }
+  button:hover { background:#a0522d; }
+  .mine-img { width: 40px; height: 40px; }
+  .hidden { display: none; }
+  #secret {
+    max-width: 960px; margin: 16px auto 40px;
+    background: #fff7e6; color: #3b2f2f;
+    padding: 16px 20px; border-radius: 10px;
+    border: 2px solid #deb887; line-height: 1.6; white-space: pre-wrap;
+  }
+  #secret h2 { margin: 0 0 8px; font-size: 20px; }
+  #secret hr { border: none; border-top: 1px dashed #deb887; margin: 12px 0; }
+  #secret a, .btn {
+    display: block; margin: 16px auto; padding: 10px 16px;
+    background: #22c55e; color: #0b1220; text-decoration: none;
+    border-radius: 6px; font-weight: bold; text-align: center;
+    width: fit-content;
+  }
+  #secret a:hover, .btn:hover { background:#16a34a; }
+  .hint{opacity:.8;margin-top:1rem;font-size:.9rem;text-align:center;color:#fff}
+</style>
+</head>
+<body>
+<h1 style="color:white;">지뢰 찾기 / Minesweeper（5×5｜5 Mines）</h1>
+
+<div class="toolbar">
+  <button id="restart">다시 시작 / Restart</button>
+  <button id="enterCode" class="hidden">비밀번호 입력 / Enter Code</button>
+</div>
+
+<p id="status"></p>
+<div id="board"></div>
+<div id="secret" class="hidden"></div>
+
+<script>
+const rows = 5, cols = 5, minesCount = 5;
+let board = [], gameOver = false;
+let restartCount = 0; 
+let minePositions = [];
+const restartBtn = document.getElementById("restart");
+const enterCodeBtn = document.getElementById("enterCode");
+const secretBox = document.getElementById("secret");
+
+const mineImages = ["missile.png", "mine.png", "trap.png", "gun.png", "grenade.png"];
+
+function init() {
+  gameOver = false;
+  restartCount++;
+  document.getElementById("status").textContent = "";
+  secretBox.classList.add("hidden");
+  secretBox.innerHTML = "";
+  restartBtn.classList.remove("hidden");
+  enterCodeBtn.classList.add("hidden");
+
+  const boardDiv = document.getElementById("board");
+  boardDiv.style.gridTemplateColumns = `repeat(${cols}, 50px)`;
+  boardDiv.innerHTML = "";
+  board = [];
+
+  for (let r = 0; r < rows; r++) {
+    board[r] = [];
+    for (let c = 0; c < cols; c++) {
+      const cell = document.createElement("div");
+      cell.classList.add("cell");
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.addEventListener("click", reveal);
+      boardDiv.appendChild(cell);
+      board[r][c] = { mine: false, revealed: false, cell, icon: null };
+    }
+  }
+
+  if (minePositions.length === 0) {
+    let placed = 0;
+    while (placed < minesCount) {
+      const r = Math.floor(Math.random() * rows);
+      const c = Math.floor(Math.random() * cols);
+      if (!minePositions.some(([rr, cc]) => rr === r && cc === c)) {
+        const icon = mineImages[Math.floor(Math.random() * mineImages.length)];
+        minePositions.push([r, c, icon]);
+        placed++;
+      }
+    }
+  }
+
+  minePositions.forEach(([r, c, icon]) => {
+    board[r][c].mine = true;
+    board[r][c].icon = icon;
+  });
+
+  if (restartCount === 3) {
+    minePositions.forEach(([r, c]) => board[r][c].cell.classList.add("mineHint3"));
+  } else if (restartCount >= 4) {
+    minePositions.forEach(([r, c]) => board[r][c].cell.classList.add("mineHint4"));
+  }
+}
+
+function reveal() {
+  if (gameOver) return;
+  const r = +this.dataset.row, c = +this.dataset.col;
+  const sq = board[r][c];
+  if (sq.revealed) return;
+
+  sq.revealed = true;
+  sq.cell.classList.add("revealed");
+
+  if (sq.mine) {
+    sq.cell.classList.add("mine");
+    sq.cell.innerHTML = `<img src="${sq.icon}" class="mine-img" alt="mine">`;
+    document.getElementById("status").textContent = "💥 게임 종료! / Game Over!";
+    showAllMines();
+    gameOver = true;
+    return;
+  }
+
+  const count = countMines(r, c);
+  if (count > 0) {
+    sq.cell.textContent = count;
+  } else {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+          if (!board[nr][nc].revealed) reveal.call(board[nr][nc].cell);
+        }
+      }
+    }
+  }
+
+  checkWin();
+}
+
+function countMines(r, c) {
+  let cnt = 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+        if (board[nr][nc].mine) cnt++;
+      }
+    }
+  }
+  return cnt;
+}
+
+function checkWin() {
+  let revealedCount = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (board[r][c].revealed) revealedCount++;
+    }
+  }
+  if (revealedCount === rows * cols - minesCount) {
+    document.getElementById("status").textContent = "🎉 축하합니다! 승리했습니다! / Congratulations, You Win!";
+    showAllMines();
+    gameOver = true;
+    restartBtn.classList.add("hidden");
+    enterCodeBtn.classList.remove("hidden");
+  }
+}
+
+function showAllMines() {
+  minePositions.forEach(([rr, cc, icon]) => {
+    const sq = board[rr][cc];
+    if (!sq.revealed) {
+      sq.cell.classList.add("mine","revealed");
+      sq.cell.innerHTML = `<img src="${icon}" class="mine-img" alt="mine">`;
+    }
+  });
+}
+
+enterCodeBtn.addEventListener("click", () => {
+  const code = prompt("다섯 자리 비밀번호를 입력하세요 / Please enter the 5-digit code:");
+  if (code === null) return;
+
+  const targetURL = "https://sddaassddasd-collab.github.io/meipanoramalaunch/";
+  let text = "";
+
+  if (code === "20197") {
+    text = `배곧신도시의 역사와 발전
+
+1985년부터 1996년까지 한국화약(후에 한화로 개명)은 시흥시 일대에서 매립 공사를 진행하였고, 1997년 1월에 완공되어 군용 화약 성능 시험장으로 사용되었다. 이로 인해 이 지역은 한화매립지 또는 군자매립지라 불렸다.
+
+그러나 시화신도시 건설이 본격화되면서 주민들의 지속적인 민원이 제기되었고, 시험장 허가도 취소되면서 해당 부지는 장기간 방치되었다.
+
+21세기에 들어서면서 개발 잠재력이 주목받자, 2006년 시흥시는 한화로부터 부지를 매입하고 개발계획을 수립하여 새로운 신도시의 청사진을 마련하였다. 초기에 ‘군자지구’ 또는 ‘군자신도시’로 불렸으나, 2011년 하반기부터 ‘군자배곧신도시’ 또는 줄여서 ‘배곧신도시’로 공식 명칭이 변경되었다. ‘배곧’은 순우리말로 ‘배움의 터전’을 의미하며, 시정부가 이 지역을 ‘교육도시’로 육성하려는 방향성과 맞닿아 있다. 전 구역이 매립지로 조성된 만큼 기존의 자연지명이 존재하지 않았기에 ‘배곧’이 공식 명칭으로 자리잡았다.
+
+2012년 10월 13일 배곧신도시는 명명식과 기공식을 거행하였고, 2015년 7월 시범단지의 첫 입주가 이루어졌다. 이어 2019년 7월까지 모든 주민이 입주를 완료하면서 도시 공동체가 완성되었다.
+
+주거 개발뿐만 아니라 배곧신도시는 광역 개발 계획에도 편입되었다. 이 지역은 경기도 경제자유구역으로 추가 지정되어 외국 기업 유치를 목표로 하였다. 이후 대우조선해양의 시험수조 연구센터가 입주하였고, 서울대 시흥캠퍼스 연구시설을 중심으로 교육·바이오·의료 연구 클러스터가 형성되었다.
+
+오늘날 배곧신도시는 군사시설에서 첨단 연구와 교육 중심지로 전환된 상징적 공간이며, 주거·연구·경제 발전을 아우르는 수도권의 신흥 도시로 자리매김하였다. 한때 냉전의 흔적을 지녔던 이 땅의 기억은 점차 사람들의 일상 속에서 잊혀지고 있다.
+
+
+The History and Development of Baegot New Town
+
+Between 1985 and 1996, Korea Explosives Company (later renamed Hanwha) carried out a large-scale land reclamation project in Siheung. Completed in January 1997, the reclaimed land was originally used as a military explosives testing site. Owing to this history, it became known as the “Hanwha Reclaimed Land” or the “Gunja Reclaimed Land.”
+
+However, as the construction of the Siwha New Town advanced, residents repeatedly raised complaints about the test site. With its operating license eventually revoked, the area was left idle for many years.
+
+In the early 2000s, the site once again attracted attention for its development potential. In 2006, Siheung City purchased the land from Hanwha and began formulating a development plan, gradually outlining the blueprint for a new town. Initially called the “Gunja District” or “Gunja New Town,” its official name was changed in late 2011 to “Gunja Baegot New Town,” or simply “Baegot New Town.” The word Baegot in pure Korean means “a place of learning,” reflecting the city’s vision of positioning the area as an “educational city.” As the entire district was reclaimed land without preexisting natural place names, Baegot became the official designation.
+
+On October 13, 2012, the naming and groundbreaking ceremony for Baegot New Town was held. In July 2015, the first demonstration complex welcomed its residents, and by July 2019, all households had moved in, completing the formation of the urban community.
+
+Beyond residential development, Baegot New Town was incorporated into broader regional planning. The reclaimed land was additionally designated as part of the Gyeonggi Free Economic Zone to attract foreign investment. Subsequently, Daewoo Shipbuilding & Marine Engineering established a test basin research center in the area, and with Seoul National University’s Siheung campus as its core, an education, bio, and medical research cluster began to take shape.
+
+Today, Baegot New Town stands as a symbol of transformation—from a former military testing ground to a hub of education and high-tech research. It has become a new urban center within the Seoul metropolitan area, integrating living, research, and economic growth, while the traces of its Cold War past gradually fade from public memory.`;
+  } else {
+    text = `비밀번호가 잘못 입력되었습니다. 아마도 아직 모든 역사를 다 탐구하지 못했을지 모릅니다. 그러나 우리는 애초에 전체의 전모를 볼 수 없습니다. 역사는 언제나 ‘망각’과 ‘망각에 저항하는 기억’ 사이에서 흔들리기 때문입니다. 바라건대 앞으로 “국가”나 “민족”이라는 말을 들을 때마다, 드러난 이야기만이 아니라 침묵된 것은 무엇인지도 함께 생각해 보기를 바랍니다.
+
+Password incorrect. Perhaps you have not yet reached the entirety of history, but in truth we can never see it in full—history always wavers between forgetting and the struggle against forgetting. May we, when we hear the words “nation” or “people” in the future, pause to reflect not only on what the stories tell, but also on what remains unsaid.`;
+  }
+
+  // 顯示文字
+  secretBox.textContent = text;
+
+  // 建立「取代整頁開啟」按鈕（同你的指定方式）
+  const link = document.createElement("a");
+  link.id = "fallbackLink";
+  link.href = targetURL;
+  link.target = "_top";
+  link.rel = "noopener";
+  link.textContent = "계속하기 / Continue";
+  secretBox.appendChild(document.createElement("hr"));
+  secretBox.appendChild(link);
+  secretBox.classList.remove("hidden");
+
+  // JS 方式主動取代最外層頁面；若被 sandbox 擋，退回 <a target="_top">
+  function replaceTop(url) {
+    try {
+      window.top.location.replace(url);
+    } catch (err) {
+      console.warn("Top navigation blocked:", err);
+      alert("상위 iframe 의 sandbox 로 인해 전체 페이지 이동이 제한되었습니다. 상위(A)網站需加入 allow-top-navigation-by-user-activation。");
+      document.getElementById("fallbackLink").click();
+    }
+  }
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    replaceTop(targetURL);
+  });
+});
+
+restartBtn.addEventListener("click", init);
+init();
+</script>
+</body>
+</html>
